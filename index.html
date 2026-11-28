@@ -138,6 +138,26 @@ details.card summary{cursor:pointer;font:700 17px var(--head)}
 .inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
 textarea.bk{width:100%;min-height:90px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:12px monospace;margin-top:8px}
 @media (max-width:760px){.bar{top:calc(env(safe-area-inset-top,0px) + 52px)}.brow{grid-template-columns:1fr 1fr 60px}.brow>span:first-child{grid-column:1/-1}}
+
+.say{background:none;border:0;cursor:pointer;font-size:14px;padding:0 6px;vertical-align:middle;opacity:.7}.say:hover,.say.on{opacity:1}
+details.note{margin-top:10px;font-size:13px}details.note summary{cursor:pointer;color:var(--mute)}
+textarea.nt{width:100%;min-height:64px;margin-top:6px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:14px var(--font);resize:vertical}
+.today{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:13px}
+.today .fire{font:700 15px var(--head)}
+.today .meter{flex:1 1 140px;height:8px;background:var(--line);border-radius:6px;overflow:hidden;min-width:100px}
+.today .meter i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.today .meter i.ok{background:var(--ok)}
+.today select{padding:3px 6px;font-size:12px}
+.gauge{height:14px;background:var(--line);border-radius:8px;overflow:hidden;margin:8px 0;position:relative}
+.gauge u{position:absolute;inset:0 auto 0 0;text-decoration:none;background:var(--ok)}.gauge u.mid{background:#e0a100}.gauge u.low{background:var(--no)}
+.gauge em{position:absolute;top:-2px;bottom:-2px;left:70%;width:2px;background:var(--fg)}
+.ach{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+.ach div{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--card);font-size:12px;color:var(--mute)}
+.ach div b{display:block;font:600 13px var(--font);color:var(--fg);margin:2px 0}
+.ach div .ic{font-size:22px;filter:grayscale(1);opacity:.35}
+.ach div.got{border-color:var(--ok);background:var(--ok-bg)}.ach div.got .ic{filter:none;opacity:1}
+.lives{font-size:15px;letter-spacing:2px}
+canvas#cf{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:60}
 </style>
 <div class="wrap">
 <header>
@@ -149,6 +169,7 @@ textarea.bk{width:100%;min-height:90px;background:var(--card);color:var(--fg);bo
 <button class="btn" id="bFp" aria-label="Letra más grande">A+</button>
 <button class="btn" id="bHl" aria-pressed="false">Resaltar palabras clave</button>
 </div>
+<div class="today" id="today"></div>
 </header>
 <nav class="tabs" id="tabs" role="tablist">
 <button data-tab="study" aria-selected="true">Estudiar</button>
@@ -197,6 +218,12 @@ let favs=new Set(S.get('az900-fav-v1',[]));
 let srs=S.get('az900-srs-v1',{});
 let hist=S.get('az900-hist-v1',[]);
 let known=new Set(S.get('az900-vknown-v1',[]));
+let notes=S.get('az900-notes-v1',{});
+let act=S.get('az900-act-v1',{});
+let ach=S.get('az900-ach-v1',{});
+let surv=S.get('az900-surv-v1',{best:0,runs:0});
+let xdate=S.get('az900-xdate-v1','');
+let goal=S.get('az900-goal-v1',15);
 let prefs=Object.assign({theme:'auto',fs:1,hl:false},S.get('az900-prefs-v1',{}));
 const saveDone=()=>S.set('az900-done-v1',[...done]);
 const saveW=()=>S.set('az900-wrong-v1',[...wrong]);
@@ -257,7 +284,7 @@ function setLang(l){st.lang=l;$$('#langseg button').forEach(x=>x.setAttribute('a
 const st={lang:'both',range:'all',topic:'all',kind:'all',flt:'all',q:'',open:new Set(),allOpen:false,limit:40,focus:null};
 function side(d,lang,show){
   const es=lang==='es', q=es?d.qEs:d.qEn;
-  let h=`<div class="col ${lang}"><div class="lang">${es?'ESPAÑOL':'ENGLISH'}</div><p class="q">${T_(q,!es)}</p>`;
+  let h=`<div class="col ${lang}"><div class="lang">${es?'ESPAÑOL':'ENGLISH'}<button class="say" data-say="${d.n}" data-l="${lang}" aria-label="Escuchar en voz alta" title="Escuchar">🔊</button></div><p class="q">${T_(q,!es)}</p>`;
   if(d.kind==='mc'){
     const o=es?d.oEs:d.oEn;
     h+='<ul class="opts">'+o.map((t,i)=>`<li class="${show&&d.ans.includes(i)?'right':''}"><b>${L[i]}.</b><span>${T_(t,!es)}</span></li>`).join('')+'</ul>';
@@ -292,7 +319,7 @@ function card(d){
   const show=st.allOpen||st.open.has(d.n);
   const cols=st.lang==='both'?'cols':'cols one';
   const sides=(st.lang!=='en'?side(d,'es',show):'')+(st.lang!=='es'?side(d,'en',show):'');
-  return `<article class="card" id="p${d.n}" data-n="${d.n}"><div class="top"><span class="num">P${d.n}</span><span class="tag">${KIND[d.kind]}${d.multi?' · varias respuestas':''}</span>${badges(d)}<button class="fav ${favs.has(d.n)?'on':''}" data-fav="${d.n}" aria-label="Guardar pregunta" title="Guardar">${favs.has(d.n)?'★':'☆'}</button><label class="done"><input type="checkbox" data-done="${d.n}" ${done.has(d.n)?'checked':''}> Estudiada</label></div><div class="${cols}">${sides}</div><div class="foot"><button class="show" data-show="${d.n}" aria-expanded="${show}">${show?'Ocultar respuesta':'Ver respuesta'}</button>${show?`<div class="why"><b>Por qué:</b> ${esc(d.why)}</div>`:''}</div>${show?expl(d):''}</article>`;
+  return `<article class="card" id="p${d.n}" data-n="${d.n}"><div class="top"><span class="num">P${d.n}</span><span class="tag">${KIND[d.kind]}${d.multi?' · varias respuestas':''}</span>${badges(d)}<button class="fav ${favs.has(d.n)?'on':''}" data-fav="${d.n}" aria-label="Guardar pregunta" title="Guardar">${favs.has(d.n)?'★':'☆'}</button><label class="done"><input type="checkbox" data-done="${d.n}" ${done.has(d.n)?'checked':''}> Estudiada</label></div><div class="${cols}">${sides}</div><div class="foot"><button class="show" data-show="${d.n}" aria-expanded="${show}">${show?'Ocultar respuesta':'Ver respuesta'}</button>${show?`<div class="why"><b>Por qué:</b> ${esc(d.why)}</div>`:''}</div>${show?expl(d):''}<details class="note" ${notes[d.n]?'open':''}><summary>✎ Mi nota${notes[d.n]?' (guardada)':''}</summary><textarea class="nt" data-note="${d.n}" placeholder="Truco, regla mnemotécnica, lo que te dijo el profe…">${esc(notes[d.n]||'')}</textarea></details></article>`;
 }
 function text(d){return [d.qEn,d.qEs,d.topic,'p'+d.n,...(d.oEn||[]),...(d.oEs||[]),...(d.rows||[]).flatMap(r=>[r.en,r.es,r.aEn||'',r.aEs||''])].join(' ').toLowerCase()}
 const IDX=DATA.map(d=>[d,text(d)]);
@@ -358,7 +385,7 @@ function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor
 function pl(p){const e=POOLES[p]||p;return st.lang==='es'?e:st.lang==='en'?p:(e===p?p:e+' / '+p)}
 function tside(d,lang,inter){
   const es=lang==='es',q=es?d.qEs:d.qEn;
-  let h=`<div class="col ${lang}"><div class="lang">${es?'ESPAÑOL':'ENGLISH'}</div><p class="q">${T_(q,!es)}</p>`;
+  let h=`<div class="col ${lang}"><div class="lang">${es?'ESPAÑOL':'ENGLISH'}<button class="say" data-say="${d.n}" data-l="${lang}" aria-label="Escuchar en voz alta" title="Escuchar">🔊</button></div><p class="q">${T_(q,!es)}</p>`;
   if(d.kind==='mc'){
     const o=es?d.oEs:d.oEn,type=d.multi?'checkbox':'radio';
     h+='<div class="opts2">'+o.map((x,i)=>inter?`<label class="opt"><input type="${type}" name="o" value="${i}"><b>${L[i]}.</b><span>${T_(x,!es)}</span></label>`:`<div class="opt"><b>${L[i]}.</b><span>${T_(x,!es)}</span></div>`).join('')+'</div>';
@@ -414,7 +441,7 @@ function resultView(root,res,meta){
 function recordResults(res,meta,applySrs){
   res.forEach(r=>{if(applySrs)srsUpdate(r.d.n,r.ok);r.ok?wrong.delete(r.d.n):wrong.add(r.d.n)});
   saveW();saveSrs();
-  hist.push({t:Date.now(),m:meta.exam?'exam':'test',n:res.length,ok:res.filter(r=>r.ok).length,s:meta.secs});saveHist();
+  hist.push({t:Date.now(),m:meta.exam?'exam':meta.surv?'surv':'test',n:res.length,ok:res.filter(r=>r.ok).length,s:meta.secs});saveHist();
 }
 /* ---------- TEST ---------- */
 const T={q:[],i:0,res:[],exam:false,t0:0,timer:null,checked:false,done:true};
@@ -444,7 +471,8 @@ function setup(msg){
   <label for="tt">Tema<select id="tt"><option value="all">Todos</option>${TOPICS.map(t=>`<option>${esc(t)}</option>`).join('')}</select></label>
   <label for="tl">Idioma<select id="tl"><option value="both">ES + EN</option><option value="es">Solo ES</option><option value="en">Solo EN</option></select></label>
   <label class="chk" for="te"><input type="checkbox" id="te"> Corrección al final</label>
-  <label class="chk" for="td"><input type="checkbox" id="td"> Incluir repetidas</label></div>
+  <label class="chk" for="td"><input type="checkbox" id="td"> Incluir repetidas</label>
+  <label class="chk" for="tsv"><input type="checkbox" id="tsv"> ❤️ Modo supervivencia (3 vidas, récord: ${surv.best})</label></div>
   ${msg?`<p class="why" style="margin:0 0 12px">${msg}</p>`:''}<div class="foot"><button class="show" id="tgo">Empezar test</button></div></div>`;
   $('#tl').value=st.lang;
   if(!nd)$('#ts').value='all';
@@ -453,14 +481,15 @@ function tick(){const c=$('#clock');if(!c)return;const s=Math.floor((Date.now()-
 function showQ(){
   const d=T.q[T.i];T.checked=false;T.done=false;
   const last=T.i+1>=T.q.length;
-  tv.innerHTML=`<div class="card"><div class="top"><span class="num">${T.i+1} / ${T.q.length}</span><span class="tag">P${d.n} · ${KIND[d.kind]}${d.multi?` · elige ${d.ans.length}`:''}</span><span class="badge">${esc(d.topic)}</span><span class="stat clock" id="clock" style="margin-left:auto;width:auto">00:00</span></div><div class="prog"><i style="width:${T.i/T.q.length*100}%"></i></div>${qCols(d)}<div id="fb"></div><div class="foot"><button class="show" id="tcheck">${T.exam?(last?'Terminar':'Siguiente'):'Comprobar'}</button><button class="btn" id="tquit">Salir</button></div></div>`;
+  tv.innerHTML=`<div class="card"><div class="top"><span class="num">${T.i+1} / ${T.q.length}</span><span class="tag">P${d.n} · ${KIND[d.kind]}${d.multi?` · elige ${d.ans.length}`:''}</span><span class="badge">${esc(d.topic)}</span>${T.surv?`<span class="lives" aria-label="${T.lives} vidas">${'❤️'.repeat(T.lives)}${'🖤'.repeat(3-T.lives)}</span><span class="tag">racha ${T.run}</span>`:''}<span class="stat clock" id="clock" style="margin-left:auto;width:auto">00:00</span></div><div class="prog"><i style="width:${T.i/T.q.length*100}%"></i></div>${qCols(d)}<div id="fb"></div><div class="foot"><button class="show" id="tcheck">${T.exam?(last?'Terminar':'Siguiente'):'Comprobar'}</button><button class="btn" id="tquit">Salir</button></div></div>`;
   tick();window.scrollTo({top:0});
 }
 function finishTest(){
   clearInterval(T.timer);T.done=true;
-  const meta={exam:false,secs:Math.floor((Date.now()-T.t0)/1000)};
+  const meta={exam:false,surv:!!T.surv,secs:Math.floor((Date.now()-T.t0)/1000)};
   recordResults(T.res,meta,T.exam);
   resultView(tv,T.res,meta);
+  if(T.surv){const sc=T.res.filter(r=>r.ok).length,nb=sc>surv.best;surv.runs++;if(nb)surv.best=sc;S.set('az900-surv-v1',surv);checkAch();tv.insertAdjacentHTML('afterbegin',`<div class="card"><div class="top"><span class="tag">Modo supervivencia</span></div><div class="score ${nb?'pass':''}">${sc} seguidas</div><p style="margin:8px 0 0">${nb?'🏆 ¡Nuevo récord!':'Tu récord es '+surv.best+'.'} Intentos: ${surv.runs}.</p></div>`)}
 }
 function beginTest(pool){T.q=pool;T.i=0;T.res=[];T.t0=Date.now();clearInterval(T.timer);T.timer=setInterval(tick,1000);showQ()}
 tv.addEventListener('click',e=>{
@@ -470,23 +499,25 @@ tv.addEventListener('click',e=>{
     const src=$('#ts').value,topic=$('#tt').value,inc=$('#td').checked;
     let pool=poolFor(src==='smart'?'all':src,topic,inc);
     if(!pool.length){setup(src==='wrong'?'Todavía no tienes preguntas falladas. Haz primero un test con «Todas».':src==='done'?'Todavía no has marcado ninguna pregunta como «Estudiada». Márcalas en Estudiar y vuelve aquí.':src==='fav'?'Todavía no has guardado ninguna pregunta con la estrella.':'No hay preguntas para esa combinación.');return}
-    setLang($('#tl').value);T.exam=$('#te').checked;
-    const n=Math.min(+$('#tn').value,pool.length);
+    setLang($('#tl').value);T.surv=$('#tsv').checked;T.lives=3;T.run=0;T.dead=false;T.exam=$('#te').checked&&!T.surv;
+    const n=T.surv?pool.length:Math.min(+$('#tn').value,pool.length);
     beginTest(shuffle((src==='smart'?smartOrder(pool):shuffle(pool)).slice(0,n)));
   }else if(id==='tcheck'){
     const d=T.q[T.i];
-    if(T.checked){T.i++;T.i>=T.q.length?finishTest():showQ();return}
+    if(T.checked){if(T.dead){T.res=T.res.slice(0,T.i+1);finishTest();return}T.i++;T.i>=T.q.length?finishTest():showQ();return}
     const a=getAns(d,tv),ok=isRight(d,a);
     T.res[T.i]={d,a,ok};
     if(T.exam){T.i++;T.i>=T.q.length?finishTest():showQ();return}
     srsUpdate(d.n,ok);saveSrs();
     T.checked=true;
+    if(T.surv){if(ok)T.run++;else{T.lives--;T.run=0;if(T.lives<=0)T.dead=true}}
     $('#tcols').outerHTML=answerCols(d);
     $('#fb').innerHTML=`<div class="why ${ok?'':'bad'}" style="margin-top:12px"><b>${ok?'✔ Correcto':'✘ Incorrecto'}</b> · ${esc(d.why)}</div>${expl(d)}`;
-    $('#tcheck').textContent=T.i+1>=T.q.length?'Ver resultado':'Siguiente';
+    $('#tcheck').textContent=(T.dead||T.i+1>=T.q.length)?'Ver resultado':'Siguiente';
+    if(T.surv&&!ok)$('#fb').insertAdjacentHTML('afterbegin',`<p class="pool" style="margin:8px 0 0">${T.dead?'💀 Sin vidas.':'Pierdes una vida: te quedan '+T.lives+'.'}</p>`);
   }else if(id==='tquit'){clearInterval(T.timer);setup()}
   else if(id==='rnew'){setup()}
-  else if(id==='rretry'){T.exam=false;beginTest(shuffle(T.res.filter(r=>!r.ok).map(r=>r.d)))}
+  else if(id==='rretry'){T.exam=false;T.surv=false;beginTest(shuffle(T.res.filter(r=>!r.ok).map(r=>r.d)))}
   else if(id==='rstudy'){goStudy(T.res.filter(r=>!r.ok).map(r=>r.d.n))}
 });
 /* ---------- EXAMEN SIMULADO ---------- */
@@ -658,11 +689,11 @@ function progRender(){
   <div class="card"><h3 class="h2" style="font-size:17px">Por tema</h3><p class="pool" style="margin:0 0 6px">Barra verde = acierto (rojo si baja del 70 %). Barra clara = preguntas practicadas.</p>${topicRows.map(r=>`<div class="brow"><span>${esc(r.t)}</span><div class="tr"><i style="width:${Math.round(r.seen/r.n*100)}%"></i>${r.acc!==null?`<u class="${r.acc<70?'low':''}" style="width:${r.acc}%"></u>`:''}</div><small>${r.acc===null?'sin datos':r.acc+' %'}</small></div>`).join('')}</div>
   <div class="card"><h3 class="h2" style="font-size:17px">Cajas de repaso espaciado</h3><p class="pool" style="margin:0 0 6px">Cada acierto sube la pregunta una caja (vuelve más tarde: 1, 3, 7 y 14 días). Un fallo la devuelve a la caja 1.</p>${['Sin ver','Caja 1','Caja 2','Caja 3','Caja 4','Caja 5 (dominada)'].map((n,i)=>`<div class="brow"><span>${n}</span><div class="tr"><u style="width:${Math.round(boxes[i]/TOT*100)}%"></u></div><small>${boxes[i]}</small></div>`).join('')}</div>
   <div class="card"><h3 class="h2" style="font-size:17px">Preguntas trampa</h3>${traps.length?`<p class="pool" style="margin:0 0 6px">Las que más fallas (dos o más intentos).</p><div class="inline">${traps.map(d=>`<span class="badge">P${d.n} · ${srs[d.n].c}/${srs[d.n].a}</span>`).join('')}</div><div class="foot"><button class="show" id="ptrap">Estudiar estas ${traps.length}</button></div>`:'<p class="pool" style="margin:0">Cuando hagas algunos tests aquí verás las preguntas que más se te resisten.</p>'}</div>
-  <div class="card"><h3 class="h2" style="font-size:17px">Últimos tests</h3>${last.length?`<div class="hist">${last.map(h=>`<div><span>${new Date(h.t).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${h.m==='exam'?'examen':'test'}</span><span>${h.ok}/${h.n} · <b style="color:var(--${h.ok/h.n>=.7?'ok':'no'})">${Math.round(h.ok/h.n*100)} %</b></span></div>`).join('')}</div>`:'<p class="pool" style="margin:0">Todavía no has hecho ningún test.</p>'}</div>
+  <div class="card"><h3 class="h2" style="font-size:17px">Últimos tests</h3>${last.length?`<div class="hist">${last.map(h=>`<div><span>${new Date(h.t).toLocaleString('es-ES',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${h.m==='exam'?'examen':h.m==='surv'?'supervivencia':'test'}</span><span>${h.ok}/${h.n} · <b style="color:var(--${h.ok/h.n>=.7?'ok':'no'})">${Math.round(h.ok/h.n*100)} %</b></span></div>`).join('')}</div>`:'<p class="pool" style="margin:0">Todavía no has hecho ningún test.</p>'}</div>
   <div class="card"><h3 class="h2" style="font-size:17px">Copia de seguridad</h3><p class="pool" style="margin:0">Tu progreso se guarda solo en este navegador. Exporta un archivo para pasarlo a otro móvil u ordenador, o impórtalo aquí.</p>
   <div class="inline"><button class="btn" id="bexp">Exportar progreso</button><label class="btn" for="bimp" style="cursor:pointer">Importar archivo</label><input type="file" id="bimp" accept="application/json,.json" hidden><button class="btn danger" id="breset">Borrar todo mi progreso</button></div><div id="bmsg" class="pool"></div><textarea class="bk hide" id="btxt" readonly aria-label="Copia de seguridad"></textarea></div>`;
 }
-function backup(){return {v:1,done:[...done],wrong:[...wrong],favs:[...favs],srs,hist,known:[...known],prefs}}
+function backup(){return {v:1,done:[...done],wrong:[...wrong],favs:[...favs],srs,hist,known:[...known],prefs,notes,act,ach,surv,xdate,goal}}
 $('#prog').addEventListener('click',e=>{
   const id=(e.target.closest('button')||{}).id;
   if(id==='pdue'){openTab('test');setup();$('#ts').value='smart';$('#tn').value=dueNow().length>10?'20':'10'}
@@ -676,7 +707,7 @@ $('#prog').addEventListener('click',e=>{
   }
   else if(id==='breset'){
     const b=e.target.closest('button');
-    if(b.dataset.sure){done=new Set();wrong=new Set();favs=new Set();srs={};hist=[];known=new Set();saveDone();saveW();saveFav();saveSrs();saveHist();saveKnown();renderStudy();progRender()}
+    if(b.dataset.sure){done=new Set();wrong=new Set();favs=new Set();srs={};hist=[];known=new Set();notes={};act={};ach={};surv={best:0,runs:0};xdate='';saveX();saveDone();saveW();saveFav();saveSrs();saveHist();saveKnown();renderStudy();progRender()}
     else{b.dataset.sure='1';b.textContent='¿Seguro? Pulsa otra vez para borrar'}
   }
 });
@@ -686,12 +717,114 @@ $('#prog').addEventListener('change',e=>{
   const r=new FileReader();
   r.onload=()=>{try{
     const b=JSON.parse(r.result);
-    done=new Set(b.done||[]);wrong=new Set(b.wrong||[]);favs=new Set(b.favs||[]);srs=b.srs||{};hist=b.hist||[];known=new Set(b.known||[]);
+    done=new Set(b.done||[]);wrong=new Set(b.wrong||[]);favs=new Set(b.favs||[]);srs=b.srs||{};hist=b.hist||[];known=new Set(b.known||[]);notes=b.notes||{};act=b.act||{};ach=b.ach||{};surv=b.surv||{best:0,runs:0};xdate=b.xdate||'';goal=b.goal||15;saveX();todayRender();
     if(b.prefs)prefs=Object.assign(prefs,b.prefs);
     saveDone();saveW();saveFav();saveSrs();saveHist();saveKnown();savePrefs();applyPrefs();renderStudy();progRender();$('#bmsg').textContent='Progreso importado.';
   }catch(x){$('#bmsg').textContent='El archivo no es válido.'}};
   r.readAsText(f);
 });
+
+/* ---------- EXTRAS: racha, logros, voz, notas, predicción, confeti ---------- */
+const saveX=()=>{S.set('az900-notes-v1',notes);S.set('az900-act-v1',act);S.set('az900-ach-v1',ach);S.set('az900-surv-v1',surv);S.set('az900-xdate-v1',xdate);S.set('az900-goal-v1',goal)};
+const dkey=(d=new Date())=>d.toLocaleDateString('sv');
+function streak(){let n=0,d=new Date();if(!act[dkey(d)])d.setDate(d.getDate()-1);while(act[dkey(d)]>0){n++;d.setDate(d.getDate()-1)}return n}
+function toast(m){const t=$('#tip');t.textContent=m;t.hidden=false;clearTimeout(tipTimer);tipTimer=setTimeout(()=>t.hidden=true,3500)}
+function todayRender(){
+  const n=act[dkey()]||0,p=Math.min(100,Math.round(n/goal*100)),st_=streak();
+  $('#today').innerHTML=`<span class="fire">🔥 ${st_} ${st_===1?'día':'días'}</span><span>Hoy: <b>${n}</b> / <select id="goalSel" aria-label="Meta diaria">${[10,15,25,40,60].map(g=>`<option ${g===goal?'selected':''}>${g}</option>`).join('')}</select> preguntas</span><div class="meter"><i class="${n>=goal?'ok':''}" style="width:${p}%"></i></div><span>${n>=goal?'✅ Meta cumplida':'Te faltan '+(goal-n)}</span>`;
+}
+$('#today').addEventListener('change',e=>{if(e.target.id==='goalSel'){goal=+e.target.value;saveX();todayRender()}});
+const _su=srsUpdate;
+srsUpdate=function(n,ok){
+  _su(n,ok);
+  const k=dkey(),before=act[k]||0;act[k]=before+1;saveX();todayRender();
+  if(before+1===goal)toast('🎯 ¡Meta de hoy cumplida! Racha: '+streak()+' '+(streak()===1?'día':'días'));
+  checkAch();
+};
+const AUX=()=>{
+  const seen=DATA.filter(d=>srs[d.n]);
+  const A=seen.reduce((s,d)=>s+srs[d.n].a,0);
+  const byT=TOPICS.map(t=>{const s=DATA.filter(d=>d.topic===t&&srs[d.n]);const a=s.reduce((x,d)=>x+srs[d.n].a,0),c=s.reduce((x,d)=>x+srs[d.n].c,0);return{n:s.length,acc:a?c/a:0}});
+  return{seen,A,byT,box5:DATA.filter(d=>srs[d.n]&&srs[d.n].b>=5).length,st:streak()};
+};
+const ACH=[
+ ['first','🚀','Primer paso','Responde tu primera pregunta',x=>x.A>=1],
+ ['a100','💯','Calentando','100 respuestas',x=>x.A>=100],
+ ['a500','🏋️','Maratón','500 respuestas',x=>x.A>=500],
+ ['s3','🔥','Constante','3 días seguidos',x=>x.st>=3],
+ ['s7','🌟','Una semana','7 días seguidos',x=>x.st>=7],
+ ['s30','👑','Imparable','30 días seguidos',x=>x.st>=30],
+ ['st100','📚','Estudioso','Marca 100 como estudiadas',x=>done.size>=100],
+ ['stall','🎓','Todo visto','Marca todas como estudiadas',x=>done.size>=TOT],
+ ['pass','✅','Aprobado','Test de 10+ preguntas con ≥ 70 %',x=>hist.some(h=>h.m!=='surv'&&h.n>=10&&h.ok/h.n>=.7)],
+ ['perf','💎','Perfecto','Test de 10+ preguntas sin fallos',x=>hist.some(h=>h.m!=='surv'&&h.n>=10&&h.ok===h.n)],
+ ['exam','🏆','Aprobado el examen','Examen simulado con ≥ 70 %',x=>hist.some(h=>h.m==='exam'&&h.ok/h.n>=.7)],
+ ['sv10','❤️','Superviviente','10 seguidas en modo supervivencia',x=>surv.best>=10],
+ ['sv25','🛡️','Invencible','25 seguidas en modo supervivencia',x=>surv.best>=25],
+ ['m50','🧠','Dominio','50 preguntas en la caja 5',x=>x.box5>=50],
+ ['all70','🎯','Sin puntos débiles','≥ 70 % en todos los temas',x=>x.byT.every(t=>t.n>=3&&t.acc>=.7)],
+ ['note5','✎','Apuntes propios','Escribe 5 notas',x=>Object.keys(notes).length>=5]
+];
+function checkAch(){
+  const x=AUX();let fresh=[];
+  ACH.forEach(a=>{if(!ach[a[0]]&&a[4](x)){ach[a[0]]=Date.now();fresh.push(a)}});
+  if(fresh.length){saveX();toast('🏅 Logro: '+fresh.map(a=>a[2]).join(', '))}
+}
+const _rr=recordResults;
+recordResults=function(res,meta,ap){_rr(res,meta,ap);checkAch()};
+/* confeti */
+function confetti(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const c=document.createElement('canvas');c.id='cf';document.body.appendChild(c);
+  const W=c.width=innerWidth,H=c.height=innerHeight,g=c.getContext('2d');
+  const cols=['#0a64b4','#5ab0f2','#14733c','#e0a100','#d83b01','#8764b8'];
+  const P=Array.from({length:140},()=>({x:Math.random()*W,y:-20-Math.random()*H*.5,vx:Math.random()*4-2,vy:2+Math.random()*4,r:Math.random()*6,s:4+Math.random()*6,c:cols[Math.random()*cols.length|0]}));
+  let f=0;(function loop(){g.clearRect(0,0,W,H);P.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.r+=.15;g.save();g.translate(p.x,p.y);g.rotate(p.r);g.fillStyle=p.c;g.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);g.restore()});if(++f<150)requestAnimationFrame(loop);else c.remove()})();
+}
+const _rv=resultView;
+resultView=function(root,res,meta){_rv(root,res,meta);if(res.length>=5&&res.filter(r=>r.ok).length/res.length>=.7)confetti()};
+/* voz */
+function sayText(d,l){
+  const es=l==='es',q=es?d.qEs:d.qEn;let t=q+'. ';
+  if(d.kind==='mc')(es?d.oEs:d.oEn).forEach((o,i)=>t+=(es?'Opción ':'Option ')+L[i]+'. '+o+'. ');
+  else (d.rows||[]).forEach(r=>t+=(es?r.es:r.en)+'. ');
+  return t;
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-say]');if(!b)return;
+  if(!('speechSynthesis' in window)){toast('Tu navegador no soporta lectura en voz alta');return}
+  const on=b.classList.contains('on');speechSynthesis.cancel();$$('.say.on').forEach(x=>x.classList.remove('on'));
+  if(on)return;
+  const d=DATA[+b.dataset.say-1],l=b.dataset.l,u=new SpeechSynthesisUtterance(sayText(d,l));
+  u.lang=l==='es'?'es-ES':'en-US';u.rate=.95;u.onend=u.onerror=()=>b.classList.remove('on');
+  b.classList.add('on');speechSynthesis.speak(u);
+});
+/* notas */
+document.addEventListener('input',e=>{
+  const t=e.target;if(!t.dataset||!t.dataset.note)return;
+  const v=t.value.trim();if(v)notes[t.dataset.note]=t.value;else delete notes[t.dataset.note];
+  saveX();clearTimeout(t._ck);t._ck=setTimeout(checkAch,800);
+});
+/* progreso: predicción y logros */
+const _pr=progRender;
+progRender=function(){
+  _pr();
+  const doms={conc:.275,arq:.375,mgmt:.35};let num=0,den=0,miss=[];
+  Object.entries(doms).forEach(([k,w])=>{const s=DATA.filter(d=>d.dom===k&&srs[d.n]);const a=s.reduce((x,d)=>x+srs[d.n].a,0),c=s.reduce((x,d)=>x+srs[d.n].c,0);if(a>=5){num+=w*c/a;den+=w}else miss.push(DOMN[k])});
+  const cov=Math.round(DATA.filter(d=>srs[d.n]).length/TOT*100);
+  const pred=den?Math.round(num/den*100):null;
+  const cls=pred===null?'':pred>=75?'':pred>=65?'mid':'low';
+  const verdict=pred===null?'Haz más tests para poder estimarlo.':pred>=75?'Vas bien para aprobar. Mantén el repaso.':pred>=65?'Casi: te falta afinar los temas flojos.':'Todavía no: repasa los temas en rojo y las falladas.';
+  const days=xdate?Math.ceil((new Date(xdate+'T00:00')-new Date(new Date().toDateString()))/864e5):null;
+  const unseen=TOT-DATA.filter(d=>srs[d.n]).length;
+  const cd=days===null?'<p class="pool" style="margin:8px 0 0">Pon la fecha de tu examen y te calculo el ritmo diario.</p>':days<0?'<p class="pool" style="margin:8px 0 0">Esa fecha ya pasó.</p>':`<p style="margin:8px 0 0"><b>${days===0?'¡Hoy es el examen!':days+' días para el examen'}</b>${days>0&&unseen?` · para ver las ${unseen} que no has practicado, unas <b>${Math.ceil(unseen/days)}</b> al día.`:''}</p>`;
+  const got=ACH.filter(a=>ach[a[0]]).length;
+  $('#prog').insertAdjacentHTML('afterbegin',`<div class="card"><h2 class="h2">¿Voy a aprobar?</h2>${pred===null?'':`<div class="score ${pred>=70?'pass':'fail'}">${pred} %</div><div class="gauge"><u class="${cls}" style="width:${pred}%"></u><em title="70 %"></em></div>`}<p style="margin:0">${verdict}</p><p class="pool" style="margin:6px 0 0">Estimación según tu acierto por dominio (peso del examen real: 25-30 % nube, 35-40 % arquitectura, 30-35 % gestión). Has practicado el ${cov} % del banco.${miss.length?' Faltan datos de: '+miss.join(', ')+'.':''}</p>
+  <div class="inline"><label for="xd">Fecha de mi examen <input type="date" id="xd" value="${xdate}" style="background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:14px var(--font)"></label></div>${cd}</div>
+  <div class="card"><h3 class="h2" style="font-size:17px">Logros · ${got}/${ACH.length}</h3><div class="ach">${ACH.map(a=>`<div class="${ach[a[0]]?'got':''}"><span class="ic">${a[1]}</span><b>${a[2]}</b>${a[3]}</div>`).join('')}</div></div>`);
+};
+$('#prog').addEventListener('change',e=>{if(e.target.id==='xd'){xdate=e.target.value;saveX();progRender()}});
+todayRender();
 /* ---------- arranque ---------- */
 applyPrefs();renderStudy();
 try{if('serviceWorker' in navigator&&/^https?:/.test(location.protocol))navigator.serviceWorker.register('sw.js').catch(()=>{})}catch(e){}
